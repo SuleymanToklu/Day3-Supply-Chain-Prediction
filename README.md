@@ -1,21 +1,24 @@
-# 🚚 Day 3: Supply Chain Delay Prediction
+# 🚀 Proje Hyperion: Dinamik Tedarik Zinciri Risk Tahmin Sistemi
 
-This is the third project of my #30DaysOfAI challenge. The goal is to build a regression model that predicts the number of delay days for a shipment in a supply chain.
+Bu proje, AI Maratonu'mun 3. gününde hayata geçirilmiştir. Basit bir gecikme tahmin modelinden, dış dünya verileriyle (hava durumu, tatiller) zenginleştirilmiş, etkileşimli bir risk analiz platformuna dönüştürülmüştür.
 
-### ✨ Key Concepts
-* **Regression with XGBoost:** Using a powerful gradient boosting model to predict a continuous value (delay days).
-* **Feature Engineering:** Creating the target variable `Delay` by subtracting scheduled shipping days from actual shipping days.
-* **Interactive UI with Streamlit:** Building a user-friendly web app to serve the model and make it accessible.
-* **Real-World Application:** This model can help logistics companies to proactively manage shipments, inform customers about potential delays, and optimize their operations.
+### ✨ Öne Çıkan Özellikler
 
-### 💻 Tech Stack
-- Python, Pandas, Scikit-learn, XGBoost, Streamlit
+- **Çoklu Veri Entegrasyonu:** API'ler aracılığıyla canlı hava durumu ve küresel tatil verilerini entegre eder.
+- **Akıllı Özellik Mühendisliği:** Ham veriden, modelin performansını artıran anlamlı özellikler (`is_holiday`, `max_temp` vb.) üretir.
+- **Gelişmiş Modelleme:** LightGBM kullanarak aykırı değerlere karşı dayanıklı ve isabetli bir tahmin modeli sunar.
+- **Etkileşimli Komuta Merkezi:** Streamlit ile geliştirilen modern arayüz, anlık olarak geleceğe dönük tahminler yapmaya olanak tanır.
 
-### 🚀 How to Run
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Train the model: `python train_model.py`
-4. Run the app: `streamlit run app.py`
+### 💻 Kullanılan Teknolojiler
+- Python, Pandas, NumPy
+- Scikit-learn, LightGBM
+- Streamlit, Plotly
+- `requests`, `holidays`, `yfinance`
+- Git & GitHub
 
-### 🔗 Live Demo
-`(Link will be added after deployment)`
+### 🚀 Nasıl Çalıştırılır?
+1.  Repo'yu klonla: `git clone ...`
+2.  Gerekli kütüphaneleri yükle: `pip install -r requirements.txt`
+3.  Zenginleştirilmiş veri setini oluştur (API'lerden veri çeker): `python build_features.py`
+4.  Modeli eğit: `python train_model.py`
+5.  Uygulamayı başlat: `streamlit run app.py`

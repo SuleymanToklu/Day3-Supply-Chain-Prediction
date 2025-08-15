@@ -1,173 +1,157 @@
-# app.py (Comparison Version)
-
 import streamlit as st
 import pandas as pd
 import joblib
 import json
+import requests
+from datetime import datetime
 from sklearn.preprocessing import LabelEncoder
-import plotly.graph_objects as go
-import numpy as np
 
-# --- Page Settings ---
-st.set_page_config(page_title="Model Karşılaştırma", page_icon="🔬", layout="wide")
+st.set_page_config(
+    page_title="Proje Hyperion",
+    page_icon="🚀",
+    layout="wide"
+)
 
-# --- Resource Loading ---
+COUNTRY_DISPLAY_MAP = {
+    "ABD": "Estados Unidos",
+    "Almanya": "Alemania",
+    "Avustralya": "Australia",
+    "Fransa": "Francia",
+    "İngiltere": "Reino Unido",
+    "Meksika": "México",
+    "Dominik Cumhuriyeti": "República Dominicana",
+    "El Salvador": "El Salvador"
+}
 @st.cache_resource
-def load_all_resources():
-    """Loads all artifacts for both base and advanced models."""
-    resources = {}
+def load_resources():
+    """Loads the Hyperion model and related artifacts."""
     try:
-        # Load Base Model
-        resources['base_model'] = joblib.load('base_model.pkl')
-        resources['base_model_columns'] = joblib.load('base_model_columns.pkl')
-        with open('base_model_metrics.json', 'r') as f:
-            resources['base_model_metrics'] = json.load(f)
-        
-        # Load Advanced Model
-        resources['advanced_model'] = joblib.load('advanced_model.pkl')
-        resources['advanced_model_columns'] = joblib.load('advanced_model_columns.pkl')
-        with open('advanced_model_metrics.json', 'r') as f:
-            resources['advanced_model_metrics'] = json.load(f)
-            
+        model = joblib.load('hyperion_model.pkl')
+        columns = joblib.load('hyperion_model_columns.pkl')
+        df_raw = pd.read_csv("DataCoSupplyChainDataset.csv", encoding='latin1', low_memory=False)
+        return model, columns, df_raw
     except FileNotFoundError:
-        return None
-    return resources
+        return None, None, None
 
-@st.cache_data
-def load_raw_data():
-    """Loads the raw data for dropdowns."""
+def get_live_weather(lat, lon, date):
+    """Fetches weather forecast for a future date."""
+    date_str = date.strftime('%Y-%m-%d')
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,precipitation_sum&start_date={date_str}&end_date={date_str}"
     try:
-        return pd.read_csv("DataCoSupplyChainDataset.csv", encoding='latin1')
-    except FileNotFoundError:
-        return None
+        response = requests.get(url)
+        data = response.json()['daily']
+        return {'max_temp': data['temperature_2m_max'][0], 'precipitation': data['precipitation_sum'][0]}
+    except Exception:
+        return {'max_temp': 15, 'precipitation': 0}
 
-resources = load_all_resources()
-df_raw = load_raw_data()
-
-# --- Main App ---
-st.title("🔬 Tedarik Zinciri Gecikme Modeli Karşılaştırması")
-
-if not resources or df_raw is None:
-    st.error("Model dosyaları bulunamadı! Lütfen önce `train_model.py` betiğini çalıştırdığınızdan emin olun.")
+model, columns, df_raw = load_resources()
+if not model or not columns or df_raw is None:
+    st.error("Hyperion modeli veya gerekli dosyalar bulunamadı. Lütfen `train_model.py` script'inin başarıyla çalıştığından emin olun.")
     st.stop()
 
-# --- Tab Layout ---
-tab1, tab2 = st.tabs(["📊 **Karşılaştırmalı Tahmin Aracı**", "📈 **Model Performans Analizi**"])
+tab1, tab2 = st.tabs(["🚀 Komuta Merkezi", "📖 Proje Hakkında"])
 
 with tab1:
-    st.header("Canlı Gecikme Tahmini: Temel ve Gelişmiş Model")
-    
-    with st.form(key='prediction_form'):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            market = st.selectbox('Pazar (Market)', options=sorted(df_raw['Market'].unique()))
-            order_region = st.selectbox('Sipariş Bölgesi (Order Region)', options=sorted(df_raw['Order Region'].unique()))
-        with col2:
-            shipping_mode = st.selectbox('Kargo Türü (Shipping Mode)', options=sorted(df_raw['Shipping Mode'].unique()))
-            category_name = st.selectbox('Ürün Kategorisi', options=sorted(df_raw['Category Name'].unique()))
-        with col3:
-            order_country = st.selectbox('Sipariş Ülkesi', options=sorted(df_raw['Order Country'].unique()))
-            # We need Sales and Quantity for the advanced model
-            sales = st.number_input('Satış Tutarı (Sales)', min_value=0.0, value=150.0)
-            quantity = st.number_input('Ürün Adedi (Quantity)', min_value=1, value=3)
+    with st.sidebar:
+        st.title("🛰️ Hyperion Girdi Paneli")
+        st.write("Tahmin yapmak için sevkiyat bilgilerini girin.")
 
-        submit_button = st.form_submit_button(label='Gecikmeleri Karşılaştır')
-
-    if submit_button:
-        # --- Prepare Input for Base Model ---
-        base_input_df = pd.DataFrame([{
-            'Market': market, 'Order Region': order_region, 'Shipping Mode': shipping_mode,
-            'Category Name': category_name, 'Order Country': order_country
-        }])
-        # Include all other columns required by the base model (even if not in UI)
-        for col in resources['base_model_columns']:
-            if col not in base_input_df.columns:
-                base_input_df[col] = 0 # Default value
+        st.subheader("📍 Lokasyon Bilgileri")
+        display_countries = sorted(list(COUNTRY_DISPLAY_MAP.keys()))
+        selected_display_country = st.selectbox("Sipariş Ülkesi", options=display_countries)
+        order_country = COUNTRY_DISPLAY_MAP[selected_display_country] 
         
-        # --- Prepare Input for Advanced Model ---
-        adv_input_df = base_input_df.copy() # Start with the same base
-        adv_input_df['Sales'] = sales
-        adv_input_df['Order Item Quantity'] = quantity
-        adv_input_df['order_month'] = pd.to_datetime('today').month
-        adv_input_df['order_day_of_week'] = pd.to_datetime('today').dayofweek
-        adv_input_df['market_shipping_interaction'] = f"{market}_{shipping_mode}"
+        market = st.selectbox("Pazar (Market)", options=sorted(df_raw['Market'].unique()))
         
-        # --- Encoding and Prediction ---
-        try:
-            # Encode Base
-            base_predict_df = base_input_df.copy()
-            for col in ['Market', 'Order Region', 'Shipping Mode', 'Category Name', 'Order Country']:
-                le = LabelEncoder().fit(df_raw[col].astype(str))
-                if base_predict_df[col].iloc[0] in le.classes_:
-                     base_predict_df[col] = le.transform(base_predict_df[col])
-                else: # Handle unseen category
-                     base_predict_df[col] = -1 # Or some other default encoded value
+        st.subheader("🚚 Sevkiyat Bilgileri")
+        shipping_mode = st.selectbox("Kargo Türü", options=sorted(df_raw['Shipping Mode'].unique()))
+        order_date = st.date_input("Sipariş Tarihi", value=datetime.now())
+
+        st.subheader("📦 Ürün Bilgileri")
+        category_name = st.selectbox("Ürün Kategorisi", options=sorted(df_raw['Category Name'].unique()))
+        sales = st.number_input("Satış Tutarı (Sales)", min_value=0.0, value=250.0, step=50.0)
+        quantity = st.number_input("Ürün Adedi", min_value=1, value=3)
+
+        predict_button = st.button("Riski ve Gecikmeyi Tahmin Et", use_container_width=True, type="primary")
+
+    st.title("🚀 Hyperion Tedarik Zinciri Risk Merkezi")
+
+    if predict_button:
+        with st.spinner('Canlı veriler alınıyor ve analiz yapılıyor...'):
+            country_coords = {
+                "Estados Unidos": (38.9, -77.0), "México": (19.4, -99.1), "Francia": (48.8, 2.3),
+                "Reino Unido": (51.5, -0.1), "Alemania": (52.5, 13.4), "Australia": ( -33.8, 151.2),
+                "República Dominicana": (18.48, -69.93), "El Salvador": (13.70, -89.20)
+            }
+            lat, lon = country_coords.get(order_country, (38.9, -77.0))
+            live_weather = get_live_weather(lat, lon, order_date)
             
-            base_prediction = resources['base_model'].predict(base_predict_df[resources['base_model_columns']])
+            input_data = {
+                'Type': 'DEBIT', 'Delivery Status': 'Shipping on time', 'Category Name': category_name,
+                'Customer Country': order_country, 'Market': market, 'Order Country': order_country,
+                'Order Region': 'West of USA', 'Shipping Mode': shipping_mode, 'Sales': sales,
+                'Order Item Quantity': quantity, 'is_holiday': 0, 
+                'max_temp': live_weather['max_temp'], 'precipitation': live_weather['precipitation']
+            }
+            input_df = pd.DataFrame([input_data])
 
-            # Encode Advanced
-            adv_predict_df = adv_input_df.copy()
-            for col in ['Market', 'Order Region', 'Shipping Mode', 'Category Name', 'Order Country']:
-                le = LabelEncoder().fit(df_raw[col].astype(str))
-                if adv_predict_df[col].iloc[0] in le.classes_:
-                    adv_predict_df[col] = le.transform(adv_predict_df[col])
-                else:
-                    adv_predict_df[col] = -1
+            for col in columns:
+                if col in input_df.columns:
+                    if col in df_raw.columns and df_raw[col].dtype == 'object':
+                        le = LabelEncoder().fit(df_raw[col].astype(str))
+                        try: input_df[col] = le.transform(input_df[col])
+                        except ValueError: input_df[col] = -1 
             
-            # Encode the new interaction feature
-            le_interaction = LabelEncoder().fit(df_raw['Market'].astype(str) + '_' + df_raw['Shipping Mode'].astype(str))
-            if adv_predict_df['market_shipping_interaction'].iloc[0] in le_interaction.classes_:
-                adv_predict_df['market_shipping_interaction'] = le_interaction.transform(adv_predict_df['market_shipping_interaction'])
-            else:
-                adv_predict_df['market_shipping_interaction'] = -1
+            input_df = input_df.reindex(columns=columns, fill_value=0)
+            prediction = model.predict(input_df)
+            delay_days = int(round(prediction[0]))
 
-            advanced_prediction = resources['advanced_model'].predict(adv_predict_df[resources['advanced_model_columns']])
-
-            # --- Display Results ---
-            st.subheader("🔮 Tahmin Sonuçları")
-            res_col1, res_col2 = st.columns(2)
-            with res_col1:
-                st.info("📦 **Temel Model (XGBoost)**")
-                st.metric("Tahmini Gecikme", f"{int(round(base_prediction[0]))} gün")
-                st.write("Sadece temel kategorik verileri kullanır.")
-            with res_col2:
-                st.success("✨ **Gelişmiş Model (LightGBM)**")
-                st.metric("Tahmini Gecikme", f"{int(round(advanced_prediction[0]))} gün")
-                st.write("Yeni özellikler ve aykırı değer optimizasyonu içerir.")
-        except Exception as e:
-            st.error(f"Tahmin sırasında bir hata oluştu: {e}")
-
+            st.subheader(f"🗓️ {order_date.strftime('%d %B %Y')} Tarihli Sevkiyat Analizi")
+            col1, col2 = st.columns(2)
+            with col1:
+                with st.container(border=True):
+                    risk_level = "Düşük"
+                    risk_delta = "Gecikme Beklenmiyor"
+                    if 3 < delay_days <= 7: risk_level = "Orta"; risk_delta = "Hafif Gecikme Riski"
+                    elif delay_days > 7: risk_level = "⚠️ Yüksek"; risk_delta = "Ciddi Gecikme Riski"
+                    st.metric(label="Risk Seviyesi", value=risk_level, delta=risk_delta, delta_color="inverse")
+            with col2:
+                with st.container(border=True):
+                    st.metric(label="Tahmini Gecikme Süresi", value=f"{delay_days} Gün")
+                    st.write(f"Beklenen Hava Durumu: {live_weather['max_temp']}°C, {live_weather['precipitation']}mm Yağış")
+            st.success("Analiz tamamlandı.")
+    else:
+        st.info("Lütfen sol paneldeki bilgileri girip tahmin butonuna basın.")
 
 with tab2:
-    st.header("📈 Modellerin Test Performansı Karşılaştırması")
-    st.write("""
-    Bu grafik, iki modelin de daha önce görmediği test verileri üzerindeki performansını göstermektedir. 
-    Metriklerin ne anlama geldiğini ve hangi modelin daha başarılı olduğunu buradan anlayabilirsiniz.
+    st.header("📖 Proje Hakkında: Hyperion")
+    st.markdown("""
+    **Hyperion**, statik bir veri setinin sınırlarını aşarak, bir tedarik zinciri operasyonundaki potansiyel gecikmeleri **gerçek dünya faktörlerini** de hesaba katarak tahmin etmeyi amaçlayan bir makine öğrenmesi projesidir.
     """)
 
-    # --- Create Comparison Chart ---
-    metrics_df = pd.DataFrame({
-        'Temel Model': resources['base_model_metrics'],
-        'Gelişmiş Model': resources['advanced_model_metrics']
-    })
+    st.subheader("🚀 Projenin Serüveni")
+    st.markdown("""
+    Bu proje, basit bir regresyon modellemesi hedefiyle başladı. Ancak, sadece mevcut verilerle yapılan tahminlerin bir noktada tıkandığı ve gerçek dünyadaki dinamikleri yansıtmakta yetersiz kaldığı görüldü. Bu noktada proje, **Hyperion vizyonuyla** yeniden doğdu.
     
-    # R-squared chart
-    st.subheader("R-squared ($R^2$) Değerleri")
-    st.write("*(Daha yüksek daha iyi)*")
-    r2_fig = go.Figure(data=[
-        go.Bar(name='Temel Model', x=['R-squared'], y=[metrics_df['Temel Model']['R-squared']]),
-        go.Bar(name='Gelişmiş Model', x=['R-squared'], y=[metrics_df['Gelişmiş Model']['R-squared']])
-    ])
-    r2_fig.update_layout(yaxis_title="R² Skoru", barmode='group')
-    st.plotly_chart(r2_fig, use_container_width=True)
+    1.  **Veri Zenginleştirme:** Ana veri seti, üç kritik harici veri kaynağı ile birleştirildi:
+        * **Küresel Tatil Takvimleri:** Siparişin çıkış/varış ülkesindeki resmi tatillerin gecikmelere etkisi.
+        * **Tarihsel Hava Durumu:** Sevkiyat lokasyonlarındaki aşırı hava olaylarının lojistiğe etkisi.
+        * **Ekonomik Göstergeler:** Küresel petrol fiyatlarının sevkiyat maliyetlerine ve kararlarına etkisi (Bu özellik geliştirme aşamasında geçici olarak askıya alınmıştır).
+    2.  **Veri Mühendisliği:** Bu farklı kaynaklardan gelen veriler, `build_features.py` adlı bir script ile temizlendi, birleştirildi ve `hyperion_dataset.csv` adında modellemeye hazır, zenginleştirilmiş bir veri seti oluşturuldu.
+    3.  **Gelişmiş Modelleme:** Bu yeni ve zengin veri seti, aykırı değerlere karşı daha dayanıklı olan **Huber loss** kriterine sahip bir **LightGBM** modeli ile eğitildi.
+    4.  **Komuta Merkezi:** Sonuçların sunulması için, anlık olarak geleceğe dönük hava durumu tahmini çekebilen, modern ve etkileşimli bir Streamlit arayüzü tasarlandı.
+    """)
 
-    # Error charts (MAE & RMSE)
-    st.subheader("Hata Metrikleri (MAE & RMSE)")
-    st.write("*(Daha düşük daha iyi)*")
-    error_metrics = ['Mean Absolute Error (MAE)', 'Root Mean Squared Error (RMSE)']
-    error_fig = go.Figure(data=[
-        go.Bar(name='Temel Model', x=error_metrics, y=[metrics_df['Temel Model'][m] for m in error_metrics]),
-        go.Bar(name='Gelişmiş Model', x=error_metrics, y=[metrics_df['Gelişmiş Model'][m] for m in error_metrics])
-    ])
-    error_fig.update_layout(yaxis_title="Gecikme Günü", barmode='group')
-    st.plotly_chart(error_fig, use_container_width=True)
+    st.subheader("🛠️ Kullanılan Teknolojiler")
+    st.markdown("""
+    - **Programlama Dili:** Python
+    - **Veri Analizi ve Manipülasyon:** Pandas, NumPy
+    - **Makine Öğrenmesi:** Scikit-learn, LightGBM
+    - **Web Arayüzü ve Dashboard:** Streamlit
+    - **Veri Görselleştirme:** Plotly
+    - **Harici Veri Çekme:** `requests` (API için) ve `holidays`
+    - **Versiyon Kontrolü:** Git & GitHub
+    """)
+
+st.sidebar.markdown("---")
+st.sidebar.info("Bu proje, Süleyman Toklu tarafından geliştirilmiştir.")

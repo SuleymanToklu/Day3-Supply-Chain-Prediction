@@ -9,3 +9,6 @@ test_api.py
 
 # Hyperion projesinin çıktısı olacak büyük dosya
 hyperion_dataset.csv
+
+# Arşivlenen eski dosyalar
+_archive/

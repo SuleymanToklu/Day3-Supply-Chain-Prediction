@@ -6,4 +6,3 @@ lightgbm
 plotly
 holidays      
 requests      
-json

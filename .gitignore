@@ -1,6 +1,4 @@
 # Büyük veri dosyaları
-*.csv
-
 # Python'un oluşturduğu cache klasörleri
 __pycache__/
 
